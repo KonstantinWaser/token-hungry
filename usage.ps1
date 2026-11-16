@@ -374,7 +374,9 @@ function New-Title($barPictures, $itemPictures) {
     $barPictures = @($barPictures | Where-Object { $_ }); $itemPictures = @($itemPictures | Where-Object { $_ })
     $width = ($barPictures | ForEach-Object { $_.Width } | Measure-Object -Maximum).Maximum
     $tall = if ($barPictures.Count) { $barPictures[0].Height } else { 9 }  # 11 with room for a look
-    if (Test-On stacked) { $across, $down = 0, ($tall + 1) } else { $across, $down = ($width + 5), 0 }
+    # Stacked bars stay 10 apart, so a bar's room above it lies over the bar
+    # before and the title keeps its size (and zoom) when it can animate.
+    if (Test-On stacked) { $across, $down = 0, 10 } else { $across, $down = ($width + 5), 0 }
     $count = $barPictures.Count
     $barsWidth = if ($count) { $width + $across * ($count - 1) } else { 0 }
     $barsHeight = if ($count) { $tall + $down * ($count - 1) } else { 0 }
