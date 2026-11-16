@@ -28,6 +28,7 @@ public class Strip : Form {
     [DllImport("user32.dll")] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string name);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr w, out Rc r);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr w);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern int AddFontResourceEx(string file, int flags, IntPtr reserved);
 
     public Strip() { FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; }
     protected override bool ShowWithoutActivation { get { return true; } }
@@ -52,6 +53,24 @@ public class Strip : Form {
     // The taskbar raises itself over topmost windows when clicked.
     public void KeepOnTop() { SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x13); }
 
+    // Puts the strip back over the taskbar the moment the taskbar or anything
+    // else comes forward, instead of polling for it.
+    delegate void WinEvent(IntPtr hook, uint ev, IntPtr w, int obj, int child, uint thread, uint time);
+    [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEvent proc, uint process, uint thread, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr w, uint relation);
+    WinEvent onEvent;  // held here so the collector keeps it
+    public void FollowTaskbar() {
+        onEvent = (hook, ev, w, obj, child, thread, time) => { if (w != Handle && !AboveTaskbar()) KeepOnTop(); };
+        SetWinEventHook(0x3, 0x3, IntPtr.Zero, onEvent, 0, 0, 0);        // foreground changed
+        SetWinEventHook(0x8004, 0x8004, IntPtr.Zero, onEvent, 0, 0, 0);  // z-order changed
+    }
+    public bool AboveTaskbar() {
+        for (IntPtr w = GetWindow(FindWindow("Shell_TrayWnd", null), 3); w != IntPtr.Zero; w = GetWindow(w, 3)) {
+            if (w == Handle) return true;  // walking up from the taskbar (3: the window above)
+        }
+        return false;
+    }
+
     // The tray area of the main taskbar, or the taskbar itself without one.
     public static Rc Tray() {
         IntPtr bar = FindWindow("Shell_TrayWnd", null);
@@ -66,7 +85,13 @@ public class Strip : Form {
 $running = New-Object Threading.Mutex($false, 'token-hungry-taskbar')
 if (-not $running.WaitOne(0)) { exit }  # already on the taskbar
 
-$monocraft = (New-Object Drawing.Text.InstalledFontCollection).Families.Name -contains 'Monocraft'
+# Monocraft ships in fonts/ and is loaded for this process only, so it needs no
+# install: GDI+ draws from the collection, the menus (GDI) from the resource.
+$fonts = New-Object Drawing.Text.PrivateFontCollection
+$fontFile = Join-Path $PSScriptRoot 'fonts\Monocraft.ttf'
+$fonts.AddFontFile($fontFile)
+[void][Strip]::AddFontResourceEx($fontFile, 0x10, [IntPtr]::Zero)  # 0x10: private to this process
+$monocraft = $fonts.Families[0]
 # ponytail: theme read once at start; restart after switching light/dark
 $light = (Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize -ErrorAction SilentlyContinue).SystemUsesLightTheme -eq 1
 $ink = if ($light) { [Drawing.Color]::Black } else { [Drawing.Color]::White }
@@ -91,8 +116,7 @@ $logos = @{ Claude = Get-Logo 'claudeusage.5m.py'; ChatGPT = Get-Logo 'gptusage.
 
 function Add-Row($menu, $text, $color = $null, $picture = $null, $action = $null, [switch]$Checked) {
     $item = New-Object Windows.Forms.ToolStripMenuItem $text
-    $family = if ((Test-On minecraft) -and $monocraft) { 'Monocraft' } else { 'Consolas' }
-    $item.Font = New-Object Drawing.Font $family, 10
+    $item.Font = if (Test-On minecraft) { New-Object Drawing.Font $monocraft, 10 } else { New-Object Drawing.Font 'Consolas', 10 }
     if ($color) { $item.ForeColor = [Drawing.ColorTranslator]::FromHtml($color) }
     # ponytail: WinForms only draws pictures in the left margin, SwiftBar puts them after the text
     if ($picture) { $item.Image = Resize-Picture $picture $menuScale; $item.ImageScaling = 'None' }
@@ -159,6 +183,7 @@ function Show-Settings {
     $form.FormBorderStyle = 'FixedDialog'; $form.MaximizeBox = $false; $form.MinimizeBox = $false
     $form.AutoSize = $true; $form.AutoSizeMode = 'GrowAndShrink'; $form.StartPosition = 'CenterScreen'
     $form.TopMost = $true; $form.Padding = New-Object Windows.Forms.Padding 10
+    $form.Font = New-Object Drawing.Font $monocraft, 9
     $tips = New-Object Windows.Forms.ToolTip
     $flags, $choices = @{}, @{}
 
@@ -175,6 +200,10 @@ function Show-Settings {
         $parent.Controls.Add($box)
     }
     function Add-Pick($parent, $setting, $options, $current, $scale) {  # options: value -> sprite name
+        $grid = New-Flow LeftToRight
+        $grid.WrapContents = $true
+        $parent.Controls.Add($grid)
+        $parent = $grid
         $buttons = foreach ($value in $options.Keys) {
             $button = New-Object Windows.Forms.RadioButton
             $button.Appearance = 'Button'; $button.Tag = $value; $button.Checked = $value -eq $current
@@ -187,6 +216,7 @@ function Show-Settings {
             $parent.Controls.Add($button)
             $button
         }
+        $grid.MaximumSize = New-Object Drawing.Size (12 * ($buttons[0].Width + 2)), 0  # twelve to a line
         $choices[$setting] = @($buttons, $current)
     }
 
@@ -216,6 +246,37 @@ function Show-Settings {
         $group.Controls.Add($rows)
         $layout.Controls.Add($group)
     }
+
+    # A key typed here is kept in the user's environment; an empty box keeps
+    # the key there is.
+    $keys = @{}
+    $group = New-Object Windows.Forms.GroupBox
+    $group.Text = 'API keys'; $group.AutoSize = $true; $group.Padding = New-Object Windows.Forms.Padding 6
+    $rows = New-Flow TopDown
+    $rows.Dock = 'Fill'
+    $hint = New-Object Windows.Forms.Label
+    $hint.AutoSize = $true; $hint.MaximumSize = New-Object Drawing.Size 420, 0
+    $hint.Text = 'Paste a key to show that balance. Claude and ChatGPT show up by themselves when Claude Code or Codex is signed in on this PC.'
+    $rows.Controls.Add($hint)
+    foreach ($name in $providers.Keys) {
+        $row = New-Flow LeftToRight
+        $label = New-Object Windows.Forms.Label
+        $label.Text = $name; $label.Width = 110; $label.Anchor = 'Left'; $label.TextAlign = 'MiddleLeft'
+        $box = New-Object Windows.Forms.TextBox
+        $box.Width = 230; $box.UseSystemPasswordChar = $true
+        $state = New-Object Windows.Forms.Label
+        $state.AutoSize = $true; $state.Anchor = 'Left'
+        $state.Text = if (Get-ApiKey $providers[$name].Key) { 'saved' } else { 'not set' }
+        $link = New-Object Windows.Forms.LinkLabel
+        $link.Text = 'Get a key'; $link.AutoSize = $true; $link.Anchor = 'Left'; $link.Tag = $providers[$name].KeyPage
+        $link.Add_LinkClicked({ param($from) Start-Process $from.Tag })
+        $row.Controls.AddRange(@($label, $box, $state, $link))
+        $rows.Controls.Add($row)
+        $keys[$providers[$name].Key] = $box
+    }
+    $group.Controls.Add($rows)
+    $layout.Controls.Add($group)
+
     $buttons = New-Flow RightToLeft
     $buttons.Anchor = 'Right'
     foreach ($text in 'Cancel', 'Save') {
@@ -239,7 +300,9 @@ function Show-Settings {
         $chosen = ($buttons | Where-Object { $_.Checked } | Select-Object -First 1).Tag
         if ($chosen -and $chosen -ne $current) { [IO.File]::WriteAllText((Join-Path $here ".$setting"), $chosen) }
     }
-    Show-All
+    $typed = @($keys.Keys | Where-Object { $keys[$_].Text.Trim() })
+    foreach ($key in $typed) { Set-ApiKey $key $keys[$key].Text.Trim() }
+    if ($typed) { Update-All } else { Show-All }  # a new key brings a new source to fetch
 }
 
 # Lays the titles out side by side, each a picture and then its text, and
@@ -273,12 +336,18 @@ function Paint {
         }
     }
     $script:frame = $bitmap
-    Place
+    Place -Force
 }
 
-function Place {
+# Draws the strip where the tray is, again only when the frame or the tray
+# moved, and puts it back on top, which a click on the taskbar takes away.
+function Place([switch]$Force) {
     $tray = [Strip]::Tray()
-    $strip.Draw($script:frame, $tray.Left - $script:frame.Width - 4, $tray.Top)
+    $at = "$($tray.Left),$($tray.Top),$($script:frame.Width)"
+    if ($Force -or $at -ne $script:placed) {
+        $strip.Draw($script:frame, $tray.Left - $script:frame.Width - 4, $tray.Top)
+        $script:placed = $at
+    }
     $strip.KeepOnTop()
 }
 
@@ -312,12 +381,20 @@ $strip.Add_MouseUp({
 })
 $strip.Show()
 Update-All
+# The first start asks for keys, and so does a start with nothing to show,
+# since there is then no title to click.
+if (-not (Test-On welcomed) -or -not $sources) {
+    [IO.File]::WriteAllText((Join-Path $here '.welcomed'), '')
+    Show-Settings
+}
 
 $refresh = New-Object Windows.Forms.Timer
 $refresh.Interval = 5 * 60 * 1000
 $refresh.Add_Tick({ Update-All })
 $refresh.Start()
-# Follows the tray as it grows or shrinks, and stays above the taskbar.
+# Stays above the taskbar as soon as it comes forward, and follows the tray
+# as it grows or shrinks.
+$strip.FollowTaskbar()
 $follow = New-Object Windows.Forms.Timer
 $follow.Interval = 1000
 $follow.Add_Tick({ Place })

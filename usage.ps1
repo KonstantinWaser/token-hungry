@@ -17,9 +17,9 @@ $symbols = @{ USD = '$'; CNY = [string][char]0xA5; EUR = [string][char]0x20AC }
 # Providers that bill per token and have an API to ask what money is left. An
 # entry has the environment variable holding the API key, the URL to ask with
 # it as a Bearer token, how to read the answer into balances and whether the
-# money still covers calls, the page to manage it on and the item its
-# Minecraft stack starts with (see $currencies). balances.py has the same list
-# for macOS.
+# money still covers calls, the page to manage it on, the page to make a key
+# on and the item its Minecraft stack starts with (see $currencies).
+# balances.py has the same list for macOS.
 $providers = [ordered]@{
     # https://api-docs.deepseek.com/api/get-user-balance
     DeepSeek = @{
@@ -29,6 +29,7 @@ $providers = [ordered]@{
             Balances = @($answer.balance_infos | ForEach-Object { @{ Currency = $_.currency; Value = [double]$_.total_balance } })
             Available = [bool]$answer.is_available } }
         Page = 'https://platform.deepseek.com/usage'
+        KeyPage = 'https://platform.deepseek.com/api_keys'
         Icon = 'emerald'
     }
     # https://openrouter.ai/docs/api-reference/get-credits (needs a management key)
@@ -39,6 +40,7 @@ $providers = [ordered]@{
             Balances = @(@{ Currency = 'USD'; Value = [double]$answer.data.total_credits - [double]$answer.data.total_usage })
             Available = [double]$answer.data.total_credits -gt [double]$answer.data.total_usage } }
         Page = 'https://openrouter.ai/settings/credits'
+        KeyPage = 'https://openrouter.ai/settings/management-keys'
         Icon = 'gold_ingot'
     }
 }
@@ -170,6 +172,13 @@ function Get-ApiKey($name) {
     $key
 }
 
+# Keeps a key for good (the user's environment) and for this process, so the
+# next refresh sees it without a restart.
+function Set-ApiKey($name, $value) {
+    [Environment]::SetEnvironmentVariable($name, $value, 'User')
+    [Environment]::SetEnvironmentVariable($name, $value)
+}
+
 function Get-Balance($name) {
     $provider = $providers[$name]
     $key = Get-ApiKey $provider.Key
@@ -219,9 +228,21 @@ function Format-UsageRow($row, [switch]$Bar) {
 $bars = [ordered]@{
     'Hearts' = 'container', 'half', 'full'
     'Golden hearts' = 'container', 'absorbing_half', 'absorbing_full'
+    'Poisoned hearts' = 'container', 'poisoned_half', 'poisoned_full'
+    'Withered hearts' = 'container', 'withered_half', 'withered_full'
+    'Frozen hearts' = 'container', 'frozen_half', 'frozen_full'
+    'Hardcore hearts' = 'container_hardcore', 'hardcore_half', 'hardcore_full'
+    'Hardcore golden hearts' = 'container_hardcore', 'absorbing_hardcore_half', 'absorbing_hardcore_full'
+    'Hardcore poisoned hearts' = 'container_hardcore', 'poisoned_hardcore_half', 'poisoned_hardcore_full'
+    'Hardcore withered hearts' = 'container_hardcore', 'withered_hardcore_half', 'withered_hardcore_full'
+    'Hardcore frozen hearts' = 'container_hardcore', 'frozen_hardcore_half', 'frozen_hardcore_full'
+    'Mount hearts' = 'vehicle_container', 'vehicle_half', 'vehicle_full'
     'Hunger' = 'food_empty', 'food_half', 'food_full'
-    'Iron armor' = 'armor_empty', 'armor_iron_half', 'armor_iron_full'
-    'Diamond armor' = 'armor_empty', 'armor_diamond_half', 'armor_diamond_full'
+    'Hunger effect' = 'food_empty_hunger', 'food_half_hunger', 'food_full_hunger'
+    'Air' = 'air_empty', 'air_bursting', 'air'
+}
+foreach ($material in 'leather', 'chainmail', 'copper', 'iron', 'gold', 'diamond', 'netherite') {
+    $bars["$((Get-Culture).TextInfo.ToTitleCase($material)) armor"] = 'armor_empty', "armor_${material}_half", "armor_${material}_full"
 }
 # The bar each limit has until the user picks another in the settings.
 $defaultBars = @{ 'Claude-Session' = 'Hearts'; 'Claude-Weekly' = 'Golden hearts'
@@ -234,6 +255,11 @@ $menuBar = 44  # pixels a title may be tall: the macOS menu bar's 22 points at 2
 # Armor is drawn: outline (o) to highlight (h), in each material's colors.
 $armor = 'ooo...ooo', 'ohlo.olmo', 'ohllollmo', 'ollllllmo', '.ollllmo.', '.ollllmo.', '.ollllmo.', '.ommmmmo.', '.ooooooo.'
 $palettes = @{  # outline, dark, mid, light, highlight
+    leather = '#321c0e', '#734020', '#a06540', '#c68b5e', '#e0b48c'
+    chainmail = '#1e1e1e', '#464646', '#6e6e6e', '#969696', '#bebebe'
+    copper = '#3c1e12', '#9c4e31', '#d87a55', '#e79c78', '#fac8aa'
+    gold = '#3c2d05', '#c88c14', '#fad232', '#fff078', '#ffffc8'
+    netherite = '#141012', '#31292a', '#443a3b', '#5f5254', '#827375'
     diamond = '#0e3f42', '#209ea3', '#4adcd4', '#a1fbe8', '#ebfffc'
     iron = '#242424', '#8c8c8c', '#c8c8c8', '#e2e2e2', '#ffffff'
     empty = '#242424', '#3c3c3c', '#3c3c3c', '#484848', '#585858'

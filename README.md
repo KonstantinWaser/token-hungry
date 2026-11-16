@@ -34,7 +34,7 @@ DeepSeek has no plan limits, so `deepseekusage.5m.py` shows your API balance ins
 
 The first time, macOS asks whether `security` may read Claude Code's login from the Keychain. Choose Always Allow.
 
-Minecraft mode uses the [Monocraft](https://github.com/IdreesInc/Monocraft) font if you have it (`brew install --cask font-monocraft`).
+Minecraft mode uses the [Monocraft](https://github.com/IdreesInc/Monocraft) font if you have it (`brew install --cask font-monocraft`, or open `fonts/Monocraft.ttf` and install it).
 
 ### Windows
 
@@ -42,13 +42,9 @@ Windows needs nothing installed. `taskbar.ps1` stands in for SwiftBar and `usage
 
 Download the repository (Code, Download ZIP, then unzip it) or clone it, and double-click `start.cmd`. To start it at every sign-in too, put a shortcut to `start.cmd` in your Startup folder (Win+R, `shell:startup`).
 
-It shows Claude and ChatGPT when Claude Code or Codex is signed in on this PC, and each API balance whose key is set. Set a key once and it shows up at the next refresh, within five minutes:
+It shows Claude and ChatGPT when Claude Code or Codex is signed in on this PC, and each API balance whose key is set. The first start opens the settings window, where you paste your API keys; add or replace one later under Settings… in any menu. Keys are kept in your user environment variables (`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`), so setting one there yourself works too.
 
-```powershell
-[Environment]::SetEnvironmentVariable('DEEPSEEK_API_KEY', 'sk-…', 'User')
-```
-
-To show only some, pass their names: `start.cmd Claude DeepSeek`. Windows has no Keychain prompt, since Claude Code keeps its login in `%USERPROFILE%\.claude\.credentials.json` there. Install Monocraft from its [releases](https://github.com/IdreesInc/Monocraft/releases) for Minecraft mode.
+To show only some, pass their names: `start.cmd Claude DeepSeek`. Windows has no Keychain prompt, since Claude Code keeps its login in `%USERPROFILE%\.claude\.credentials.json` there. Minecraft mode uses the Monocraft font from `fonts/` without installing it ([Monocraft](https://github.com/IdreesInc/Monocraft) by Idrees Hassan, under the SIL Open Font License in `fonts/Monocraft-OFL.txt`).
 
 ## Fine print
 

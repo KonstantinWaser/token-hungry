@@ -33,9 +33,21 @@ ICONS = 10 if on("wide") else 5  # icons per bar in the menu bar
 BARS = {
     "Hearts": ("container", "half", "full"),
     "Golden hearts": ("container", "absorbing_half", "absorbing_full"),
+    "Poisoned hearts": ("container", "poisoned_half", "poisoned_full"),
+    "Withered hearts": ("container", "withered_half", "withered_full"),
+    "Frozen hearts": ("container", "frozen_half", "frozen_full"),
+    "Hardcore hearts": ("container_hardcore", "hardcore_half", "hardcore_full"),
+    "Hardcore golden hearts": ("container_hardcore", "absorbing_hardcore_half", "absorbing_hardcore_full"),
+    "Hardcore poisoned hearts": ("container_hardcore", "poisoned_hardcore_half", "poisoned_hardcore_full"),
+    "Hardcore withered hearts": ("container_hardcore", "withered_hardcore_half", "withered_hardcore_full"),
+    "Hardcore frozen hearts": ("container_hardcore", "frozen_hardcore_half", "frozen_hardcore_full"),
+    # vehicle_half is the game's mirrored: the game fills mount hearts from the right
+    "Mount hearts": ("vehicle_container", "vehicle_half", "vehicle_full"),
     "Hunger": ("food_empty", "food_half", "food_full"),
-    "Iron armor": ("armor_empty", "armor_iron_half", "armor_iron_full"),
-    "Diamond armor": ("armor_empty", "armor_diamond_half", "armor_diamond_full"),
+    "Hunger effect": ("food_empty_hunger", "food_half_hunger", "food_full_hunger"),
+    "Air": ("air_empty", "air_bursting", "air"),
+    **{f"{material.title()} armor": ("armor_empty", f"armor_{material}_half", f"armor_{material}_full")
+       for material in ("leather", "chainmail", "copper", "iron", "gold", "diamond", "netherite")},
 }
 # The bar each limit has until the user picks another in the settings window.
 DEFAULT_BARS = {("Claude", "Session"): "Hearts", ("Claude", "Weekly"): "Golden hearts",
@@ -57,6 +69,11 @@ ollllllmo
 .ooooooo.
 """
 PALETTES = {  # outline, dark, mid, light, highlight
+    "leather": ((50, 28, 14), (115, 64, 32), (160, 101, 64), (198, 139, 94), (224, 180, 140)),
+    "chainmail": ((30, 30, 30), (70, 70, 70), (110, 110, 110), (150, 150, 150), (190, 190, 190)),
+    "copper": ((60, 30, 18), (156, 78, 49), (216, 122, 85), (231, 156, 120), (250, 200, 170)),
+    "gold": ((60, 45, 5), (200, 140, 20), (250, 210, 50), (255, 240, 120), (255, 255, 200)),
+    "netherite": ((20, 16, 18), (49, 41, 42), (68, 58, 59), (95, 82, 84), (130, 115, 117)),
     "diamond": ((14, 63, 66), (32, 158, 163), (74, 220, 212), (161, 251, 232), (235, 255, 252)),
     "iron": ((36, 36, 36), (140, 140, 140), (200, 200, 200), (226, 226, 226), (255, 255, 255)),
     "empty": ((36, 36, 36), (60, 60, 60), (60, 60, 60), (72, 72, 72), (88, 88, 88)),
@@ -301,10 +318,13 @@ def window():
 
     def pick(parent, name, options, current):  # options: value -> the sprite showing it
         choices[name] = tk.StringVar(value=current), current
-        for value, sprite_name in options.items():
+        grid = tk.Frame(parent)
+        grid.pack(side="left")
+        for i, (value, sprite_name) in enumerate(options.items()):
             shown = picture(sprite_name)
-            tk.Radiobutton(parent, variable=choices[name][0], value=value, indicatoron=False, padx=4, pady=2,
-                           **({"image": shown} if shown else {"text": value.replace("_", " ")})).pack(side="left")
+            tk.Radiobutton(grid, variable=choices[name][0], value=value, indicatoron=False, padx=4, pady=2,
+                           **({"image": shown} if shown else {"text": value.replace("_", " ")})
+                           ).grid(row=i // 12, column=i % 12)  # twelve to a line
 
     switches = tk.Frame(root, padx=12, pady=8)
     switches.pack(fill="x")
