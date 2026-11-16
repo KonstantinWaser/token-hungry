@@ -326,16 +326,46 @@ function Get-Sprite($name) {
 }
 
 # A bar of icons showing what is left of a limit.
-function New-Bar($style, $pct) {
+function Get-Icons { if (Test-On wide) { 10 } else { 5 } }
+
+# The half icons left of a limit.
+function Get-Halves($pct) { [Math]::Round((100 - [Math]::Min(100, $pct)) * 2 * (Get-Icons) / 100) }
+
+# A look animates a bar on the taskbar: Blink draws it white, as when the
+# player takes damage, and Lift raises each icon by that many pixels. A bar
+# with a look, even an empty one, gets two pixels of room above it.
+function New-Bar($style, $pct, $look = $null) {
     $empty, $half, $full = $bars[$style]
-    $icons = if (Test-On wide) { 10 } else { 5 }
-    $halves = [Math]::Round((100 - [Math]::Min(100, $pct)) * 2 * $icons / 100)
-    $bar = New-Picture (8 * $icons + 1) 9
+    $icons = Get-Icons
+    $halves = Get-Halves $pct
+    $room = if ($null -ne $look) { 2 } else { 0 }
+    $bar = New-Picture (8 * $icons + 1) (9 + $room)
     for ($i = 0; $i -lt $icons; $i++) {
-        Add-Picture $bar (Get-Sprite $empty) (8 * $i)
-        if ($halves -ge 2 * $i + 1) { Add-Picture $bar (Get-Sprite $(if ($halves -ge 2 * $i + 2) { $full } else { $half })) (8 * $i) }
+        $top = $room - $(if ($look.Lift) { $look.Lift[$i] } else { 0 })
+        Add-Picture $bar (Get-Look $empty $look.Blink) (8 * $i) $top
+        if ($halves -ge 2 * $i + 1) { Add-Picture $bar (Get-Look $(if ($halves -ge 2 * $i + 2) { $full } else { $half }) $look.Blink) (8 * $i) $top }
     }
     $bar
+}
+
+# A sprite, or blinking: the game's own blinking heart where there is one,
+# anything else lightened.
+function Get-Look($name, $blink) {
+    if (-not $blink) { return Get-Sprite $name }
+    if (Test-Path -LiteralPath (Join-Path $here "sprites\${name}_blinking.png")) { return Get-Sprite "${name}_blinking" }
+    if (-not $sprites["$name*"]) {
+        $plain = Get-Sprite $name
+        $matrix = New-Object Drawing.Imaging.ColorMatrix
+        $matrix.Matrix40 = $matrix.Matrix41 = $matrix.Matrix42 = 0.5
+        $attributes = New-Object Drawing.Imaging.ImageAttributes
+        $attributes.SetColorMatrix($matrix)
+        $light = New-Picture $plain.Width $plain.Height
+        $graphics = [Drawing.Graphics]::FromImage($light)
+        $graphics.DrawImage($plain, (New-Object Drawing.Rectangle 0, 0, $plain.Width, $plain.Height), 0, 0, $plain.Width, $plain.Height, 'Pixel', $attributes)
+        $graphics.Dispose()
+        $sprites["$name*"] = $light
+    }
+    $sprites["$name*"]
 }
 
 # The taskbar title: the bars side by side or stacked, then the items, drawn as
@@ -343,10 +373,11 @@ function New-Bar($style, $pct) {
 function New-Title($barPictures, $itemPictures) {
     $barPictures = @($barPictures | Where-Object { $_ }); $itemPictures = @($itemPictures | Where-Object { $_ })
     $width = ($barPictures | ForEach-Object { $_.Width } | Measure-Object -Maximum).Maximum
-    if (Test-On stacked) { $across, $down = 0, 10 } else { $across, $down = ($width + 5), 0 }
+    $tall = if ($barPictures.Count) { $barPictures[0].Height } else { 9 }  # 11 with room for a look
+    if (Test-On stacked) { $across, $down = 0, ($tall + 1) } else { $across, $down = ($width + 5), 0 }
     $count = $barPictures.Count
     $barsWidth = if ($count) { $width + $across * ($count - 1) } else { 0 }
-    $barsHeight = if ($count) { 9 + $down * ($count - 1) } else { 0 }
+    $barsHeight = if ($count) { $tall + $down * ($count - 1) } else { 0 }
     $gap = if ($count -and $itemPictures.Count) { 4 } else { 0 }
     $height = [Math]::Max($barsHeight, $(if ($itemPictures.Count) { 18 } else { 0 }))
     $itemsWidth = ($itemPictures | ForEach-Object { $_.Width } | Measure-Object -Sum).Sum
@@ -415,9 +446,12 @@ function New-Slot($name, $count = '') {
 
 # A model drawn the Minecraft way: the title picture, or $null when there is
 # nothing to draw, and for each menu row a picture to show beside it.
-function New-MinecraftTitle($name, $model) {
+# Looks, when given, map a row's label to its look (see New-Bar); the taskbar
+# always gives them, so the title keeps its size while it animates.
+function New-MinecraftTitle($name, $model, $looks = $null) {
     $barPictures = foreach ($row in $model.Rows) {
-        if (-not (Test-On (Get-Key hide $name $row.Label))) { New-Bar (Get-Bar $name $row.Label) $row.Pct }
+        $look = if ($null -eq $looks) { $null } elseif ($looks[$row.Label]) { $looks[$row.Label] } else { @{} }
+        if (-not (Test-On (Get-Key hide $name $row.Label))) { New-Bar (Get-Bar $name $row.Label) $row.Pct $look }
     }
     $itemPictures = @(
         foreach ($balance in $model.Balances) {

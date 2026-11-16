@@ -44,6 +44,8 @@ Download the repository (Code, Download ZIP, then unzip it) or clone it, and dou
 
 It shows Claude and ChatGPT when Claude Code or Codex is signed in on this PC, and each API balance whose key is set. The first start opens the settings window, where you paste your API keys; add or replace one later under Settings… in any menu. Keys are kept in your user environment variables (`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`), so setting one there yourself works too.
 
+In Minecraft mode the bars move as they do in the game: a bar that lost icons since the last refresh blinks, one that got icons back runs the regeneration wave, and one with a fifth or less left shakes.
+
 To show only some, pass their names: `start.cmd Claude DeepSeek`. Windows has no Keychain prompt, since Claude Code keeps its login in `%USERPROFILE%\.claude\.credentials.json` there. Minecraft mode uses the Monocraft font from `fonts/` without installing it ([Monocraft](https://github.com/IdreesInc/Monocraft) by Idrees Hassan, under the SIL Open Font License in `fonts/Monocraft-OFL.txt`).
 
 ## Fine print

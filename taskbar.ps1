@@ -133,7 +133,12 @@ function Show-Source($source) {
     $minecraft = Test-On minecraft
     $balance = $providers.Contains($name)
     $source.Image = $null; $source.Text = ''; $source.Color = $ink
-    if ($minecraft -and -not $model.Error) { $source.Image = New-MinecraftTitle $name $model }
+    if ($minecraft -and -not $model.Error) {
+        $looks = Get-Looks $source
+        $source.LookKey = $looks | ConvertTo-Json -Compress -Depth 3
+        $source.Image = New-MinecraftTitle $name $model $looks
+        $source.Frames = @{ $source.LookKey = $source.Image }  # frames drawn for this model and these settings, by look
+    }
     if (-not $source.Image) {
         if ($balance) {
             $source.Text = "$($name[0]) " + $(if ($model.Error) { $warning } else { Format-Money $model.Balances[0] })
@@ -355,6 +360,66 @@ function Place([switch]$Force) {
 function Show-All {
     foreach ($source in $sources) { Show-Source $source }
     Paint
+    $animate.Start()  # stops itself when nothing moves
+}
+
+# Animations, in ticks of the animation timer (100 ms), as in the game: a bar
+# that lost icons since the last refresh blinks, one that got icons back runs
+# the regeneration wave, and one nearly empty shakes until it fills again.
+function Watch-Rows($source) {
+    if ($null -eq $source.Effects) { $source.Effects = @{}; $source.Pcts = @{} }
+    foreach ($row in $source.Model.Rows) {
+        $was = $source.Pcts[$row.Label]
+        if ($null -ne $was) {
+            $before, $now = (Get-Halves $was), (Get-Halves $row.Pct)
+            if ($now -lt $before) { $source.Effects[$row.Label] = @{ Kind = 'blink'; Start = $script:tick } }
+            if ($now -gt $before) { $source.Effects[$row.Label] = @{ Kind = 'wave'; Start = $script:tick } }
+        }
+        $source.Pcts[$row.Label] = $row.Pct
+    }
+}
+
+function Get-Looks($source) {
+    $looks = @{}
+    $icons = Get-Icons
+    foreach ($row in $source.Model.Rows) {
+        $effect = if ($source.Effects) { $source.Effects[$row.Label] }
+        $t = if ($effect) { $script:tick - $effect.Start } else { 0 }
+        if ($effect -and (($effect.Kind -eq 'blink' -and $t -ge 8) -or ($effect.Kind -eq 'wave' -and $t -gt $icons))) {
+            $source.Effects.Remove($row.Label); $effect = $null
+        }
+        $halves = Get-Halves $row.Pct
+        if ($effect.Kind -eq 'blink') {
+            $looks[$row.Label] = @{ Blink = $t % 2 -eq 0 }  # four flashes
+        } elseif ($effect.Kind -eq 'wave') {
+            $looks[$row.Label] = @{ Lift = @(0..($icons - 1) | ForEach-Object { if ($_ -eq $t) { 2 } elseif ([Math]::Abs($_ - $t) -eq 1) { 1 } else { 0 } }) }
+        } elseif ($halves -le 2 * $icons / 5) {  # a fifth or less left, like four health points of twenty
+            $random = New-Object Random ([int][Math]::Floor($script:tick / 3) * 31 + [int]$row.Label[0])  # new shake every 300 ms
+            $looks[$row.Label] = @{ Lift = @(1..$icons | ForEach-Object { $random.Next(2) }) }
+        }
+    }
+    $looks
+}
+
+# One tick: redraws the titles whose look changed, and stops when none moves.
+function Step-Animation {
+    $script:tick++
+    $busy = $changed = $false
+    if (Test-On minecraft) {
+        foreach ($source in $sources) {
+            if ($source.Model.Error -or -not $source.Model.Rows) { continue }
+            $looks = Get-Looks $source
+            if ($looks.Count) { $busy = $true }
+            $key = $looks | ConvertTo-Json -Compress -Depth 3
+            if ($key -ne $source.LookKey) {
+                if (-not $source.Frames[$key]) { $source.Frames[$key] = New-MinecraftTitle $source.Name $source.Model $looks }
+                if ($source.Frames[$key]) { $source.Image = $source.Frames[$key]; $changed = $true }
+                $source.LookKey = $key
+            }
+        }
+    }
+    if ($changed) { Paint }
+    if (-not $busy) { $animate.Stop() }
 }
 
 # Asks every source again. The list itself is made again too, so a key set or
@@ -364,12 +429,16 @@ function Update-All {
     $script:sources = @(Get-Sources $names | ForEach-Object {
         if ($known[$_.Name]) { $known[$_.Name] } else { $_.Menu = New-Object Windows.Forms.ContextMenuStrip; $_ }
     })
-    foreach ($source in $sources) { Update-Model $source }
+    foreach ($source in $sources) { Update-Model $source; Watch-Rows $source }
     Show-All
 }
 
 $names = $args
 $sources = @()
+$tick = 0
+$animate = New-Object Windows.Forms.Timer
+$animate.Interval = 100
+$animate.Add_Tick({ Step-Animation })
 $strip = New-Object Strip
 $strip.Add_MouseUp({
     param($from, $click)
