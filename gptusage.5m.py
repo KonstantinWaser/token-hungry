@@ -49,8 +49,8 @@ def render_resets(resets):
     for name, start, end in resets:
         line = f"{name.title()} reset"
         if start and day(start) > datetime.now(timezone.utc):
-            line += f" from {day(start):%-d %b}"
-        groups.setdefault(line, []).append(f"{day(end):%-d %b}" if end else "")
+            line += f" from {day(start).day} {day(start):%b}"
+        groups.setdefault(line, []).append(f"{day(end).day} {day(end):%b}" if end else "")
     if groups:
         print("---")
     for line, ends in groups.items():

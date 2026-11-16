@@ -2,3 +2,7 @@
 .wide
 .stacked
 __pycache__/
+.hide-*
+.claude-usage.json
+.icon-*
+.bar-*
